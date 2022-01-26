@@ -1,0 +1,162 @@
+#!/usr/bin/ksh
+#
+#  etherstatus  
+#
+#  V.1.0.5     -   Daniel Baird 2007
+#
+#  A Solaris script to show the link status 
+#  of Ethernet interfaces. 
+# 
+#  Currently supported interface types;
+#       qfe, hme, eri, dmfe, bge, ce, e1000g
+#
+#  Examples of Sun hardware Ethernet devices
+#  listed in /etc/path_to_inst
+#
+#  "/pci@1f,0/pci@1,1/network@3,1" 1 "hme"
+#  "/pci@1f,0/pci@1,1/network@1,1" 0 "hme"
+#  "/sbus@1f,0/SUNW,hme@e,8c00000" 0 "hme"
+#  "/sbus@1f,0/SUNW,hme@3,8c00000" 1 "hme"
+#  "/pci@1f,4000/network@1,1" 0 "hme"
+#  "/pci@8,700000/network@5,1" 0 "eri"
+#  "/pci@1f,4000/pci@4/SUNW,qfe@0,1" 0 "qfe"
+#  "/pci@1f,2000/pci@1/SUNW,qfe@1,1" 5 "qfe"
+#  "/pci@1f,0/ethernet@c" 0 "dmfe"
+#  "/pci@1f,0/ethernet@5" 1 "dmfe"
+#  "/pci@1d,700000/network@2" 2 "bge"
+#  "/pci@1d,700000/network@2,1" 3 "bge"
+#  "/pci@1f,700000/network@2" 0 "bge"
+#  "/pci@1f,700000/network@2,1" 1 "bge"
+#  "/pci@1f,600000/network@2" 0 "ce"
+#  "/pci@1f,600000/network@1" 1 "ce"
+#  "/pci@780/pci@0/pci@1/network@0" 0 "e1000g"
+#  "/pci@780/pci@0/pci@1/network@0,1" 1 "e1000g"
+#  "/pci@7c0/pci@0/pci@2/network@0" 2 "e1000g"
+#  "/pci@7c0/pci@0/pci@2/network@0,1" 3 "e1000g"
+#
+#   ndd commands
+#
+#       # ndd -set /dev/qfe instance 0
+#       That selects the first instance: qfe0. 
+#       Note that the default instance is 0.
+#
+#       # ndd -get /dev/qfe link_status
+#         1 = up
+#         0 = down
+#       # ndd -get /dev/qfe link_speed
+#         1 = 100 Mb
+#         0 = 10 Mb
+#       # ndd -get /dev/qfe link_mode
+#         1 = Full Duplex (FDX)
+#         0 = Half Duplex (HDX)
+#
+
+uservar=`/usr/xpg4/bin/id -un`
+if [ $uservar != "root" ]; then
+        echo "this command must be run as root"
+        exit
+fi
+
+printetherdevs() {
+        cat /etc/path_to_inst | awk '{ print $3 "," $2 }' | sort | /usr/bin/egrep "hme|ce|qfe|eri|dmfe|bge|e1000g"
+}
+
+for line in `printetherdevs`; do
+
+        devtype=${line%\"*}
+        devtype=${devtype#*\"}
+        devnum=${line##*\,}
+
+     if [[ $devtype = "dmfe" ]]; then
+
+        linkstatus=`/usr/sbin/ndd -get /dev/$devtype$devnum link_status`
+        if [ $linkstatus == 1 ]; then
+                linkspeedtext=`/usr/sbin/ndd -get /dev/$devtype$devnum link_speed`
+                linkmode=`/usr/sbin/ndd -get /dev/$devtype$devnum link_mode`
+                if [ $linkmode == 1 ]; then
+                        linkmodetext="Full-Duplex"
+                else
+                        linkmodetext="Half-Duplex"
+                fi
+                echo  $devtype$devnum": <UP,"$linkspeedtext","$linkmodetext">"
+        else
+                echo  $devtype$devnum": <DOWN>"
+        fi
+
+     elif [[ $devtype = "e1000g" ]]; then
+
+        linkstatus=`/usr/sbin/ndd -get /dev/$devtype$devnum link_status`
+        if [ $linkstatus == 1 ]; then
+                linkspeedtext=`/usr/sbin/ndd -get /dev/$devtype$devnum link_speed`
+                linkmode=`/usr/sbin/ndd -get /dev/$devtype$devnum link_duplex`
+                if [ $linkmode == 1 ]; then
+                        linkmodetext="Full-Duplex"
+                else
+                        linkmodetext="Half-Duplex"
+                fi
+                echo  $devtype$devnum": <UP,"$linkspeedtext","$linkmodetext">"
+        else
+                echo  $devtype$devnum": <DOWN>"
+        fi
+
+     elif [[ $devtype = "bge" ]]; then
+
+        linkstatus=`/usr/sbin/ndd -get /dev/$devtype$devnum link_status`
+        if [ $linkstatus == 1 ]; then
+                linkspeedtext=`/usr/sbin/ndd -get /dev/$devtype$devnum link_speed`
+                linkmode=`/usr/sbin/ndd -get /dev/$devtype$devnum link_duplex`
+                if [ $linkmode == 1 ]; then
+                        linkmodetext="Full-Duplex"
+                else
+                        linkmodetext="Half-Duplex"
+                fi
+                echo  $devtype$devnum": <UP,"$linkspeedtext","$linkmodetext">"
+        else
+                echo  $devtype$devnum": <DOWN>"
+        fi
+
+
+     elif [[ $devtype = "ce" ]]; then
+
+        linkstatus=`/usr/bin/kstat -m ce -i $devnum -s link_up -p 2> /dev/null | awk '{ print $2 }'`
+        if [ $linkstatus == 1 ]; then
+                linkspeedtext=`/usr/bin/kstat -m ce -i $devnum -s link_speed -p 2> /dev/null | awk '{ print $2 }'`
+                linkmode=`/usr/bin/kstat -m ce -i $devnum -s link_duplex -p 2> /dev/null | awk '{ print $2 }'`
+                if [ $linkmode == 2 ]; then
+                        linkmodetext="Full-Duplex"
+                elif [ $linkmode == 1 ]; then
+                        linkmodetext="Half-Duplex"
+                else
+                        linkmodetext="error"
+                fi
+                echo  $devtype$devnum": <UP,"$linkspeedtext","$linkmodetext">"
+        else
+                echo  $devtype$devnum": <DOWN>"
+        fi
+
+     else
+                
+        ndd -set /dev/$devtype instance $devnum
+        linkstatus=`/usr/sbin/ndd -get /dev/$devtype link_status`
+
+        if [ $linkstatus == 1 ]; then
+                linkspeed=`/usr/sbin/ndd -get /dev/$devtype link_speed`
+                if [ $linkspeed == 1 ]; then
+                        linkspeedtext="100"
+                else
+                        linkspeedtext="10"
+                fi
+                linkmode=`/usr/sbin/ndd -get /dev/$devtype link_mode`
+                if [ $linkmode == 1 ]; then
+                        linkmodetext="Full-Duplex"
+                else
+                        linkmodetext="Half-Duplex"
+                fi
+                echo  $devtype$devnum": <UP,"$linkspeedtext","$linkmodetext">"
+        else
+                echo  $devtype$devnum": <DOWN>"
+        fi 
+
+     fi
+
+done
